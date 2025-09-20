@@ -1,0 +1,95 @@
+services:
+  # Gateway
+  logzai-gateway:
+    image: nginx:alpine
+    container_name: logzai-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/gateway.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - logzai-frontend
+      - logzai-api
+    restart: unless-stopped
+
+  # Frontend React application
+  logzai-frontend:
+    image: ghalex/logzai-frontend:v1.0.3
+    container_name: logzai-frontend
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    # depends_on:
+    #   - logzai-api
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend API - Internal only on port 8000
+  logzai-api:
+    image: ghalex/logzai-api:v1.0.1
+    container_name: logzai-api
+    environment:
+      NODE_ENV: production
+      API_ENDPOINT: ${API_ENDPOINT}
+      MCP_ENDPOINT: ${MCP_ENDPOINT}
+      INGEST_ENDPOINT: ${INGEST_ENDPOINT}
+      COLLECTOR_ENDPOINT: ${COLLECTOR_ENDPOINT}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_PATH: ${S3_PATH}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_TYPE: ${OPENAI_API_TYPE}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      PG_DATABASE_URL: ${PG_DATABASE_URL}
+      LOCAL_PATH: ${LOCAL_PATH}
+      COLLECTOR_API_KEY: ${COLLECTOR_API_KEY}
+      DEMO_ORGANIZATION_ID: ${DEMO_ORGANIZATION_ID}
+      USE_S3: ${USE_S3}
+    restart: unless-stopped
+
+  # Collector for receiving OTLP data
+  logzai-collector:
+    image: ghalex/logzai-collector:v1.0.2
+    container_name: logzai-collector
+    ports:
+      - "4317:4317"       # gRPC OTLP
+      - "4318:4318"       # HTTP OTLP
+      - "13133:13133"     # health endpoint
+    environment:
+      API_HOST: logzai-api
+      API_PORT: 8000
+      COLLECTOR_API_KEY: ${COLLECTOR_API_KEY}
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: logzai-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    name: logzai-network
+
+volumes:
+  redis-data:
+    driver: local
