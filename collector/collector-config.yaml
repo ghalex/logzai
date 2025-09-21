@@ -1,0 +1,43 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318 # was localhost:4318
+      grpc:
+        endpoint: 0.0.0.0:4317 # was localhost:4317
+
+processors:
+  batch:
+    timeout: 4s # wait up to 4s to fill a batch
+    send_batch_size: 2500 # flush when 2.5k records are accumulated
+    send_batch_max_size: 5000
+
+  memory_limiter:
+    check_interval: 2s # how often the limiter checks usage
+    limit_mib: 1024 # soft cap for total memory used by the collector
+    spike_limit_mib: 256 # max spike allowed between checks
+
+  # attributes:
+  #   actions:
+  #     - key: org_id
+  #       action: upsert
+  #       from_attribute: service.namespace
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133 # add health server
+
+exporters:
+  otlphttp:
+    logs_endpoint: ${INGESTOR_ENDPOINT}/api/v1/otel/logs
+    compression: none
+    headers:
+      x-api-key: ${COLLECTOR_API_KEY}
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp]

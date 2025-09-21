@@ -9,11 +9,7 @@ fi
 
 
 # Map common aliases to actual service names
-if [ "$1" = "api" ]; then
-  SERVICE="logzai-api"
-else
-  SERVICE="$1"
-fi
+SERVICE="logzai-$1"
 
 # Stop the service
 if ! docker compose stop $SERVICE; then
