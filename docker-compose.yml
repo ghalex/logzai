@@ -54,7 +54,7 @@ services:
 
   # Backend API - Internal only on port 8000
   logzai-api:
-    image: ghalex/logzai-api:v1.0.4
+    image: ghalex/logzai-api:v1.0.6
     container_name: logzai-api
     environment:
       NODE_ENV: production
@@ -87,7 +87,7 @@ services:
 
   # Ingestor service for processing incoming logs
   logzai-ingestor:
-    image: ghalex/logzai-ingestor:v1.0.0
+    image: ghalex/logzai-ingestor:v1.0.1
     container_name: logzai-ingestor
     environment:
       INGESTOR_ENDPOINT: ${INGESTOR_ENDPOINT}
@@ -111,7 +111,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
 
   # Redis for caching and rate limiting
   redis:

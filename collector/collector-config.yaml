@@ -29,7 +29,7 @@ extensions:
 
 exporters:
   otlphttp:
-    logs_endpoint: ${INGESTOR_ENDPOINT}/api/v1/otel/logs
+    logs_endpoint: ${INGESTOR_ENDPOINT}/api/v1/process/otel/logs
     compression: none
     headers:
       x-api-key: ${COLLECTOR_API_KEY}
