@@ -30,6 +30,7 @@ extensions:
 exporters:
   otlphttp:
     logs_endpoint: ${INGESTOR_ENDPOINT}/api/v1/process/otel/logs
+    traces_endpoint: ${INGESTOR_ENDPOINT}/api/v1/process/otel/traces
     compression: none
     headers:
       x-api-key: ${COLLECTOR_API_KEY}
@@ -38,6 +39,10 @@ service:
   extensions: [health_check]
   pipelines:
     logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp]
+    traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlphttp]
