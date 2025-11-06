@@ -343,23 +343,36 @@ wait_for_services() {
     echo ""
     print_info "Waiting for services to be ready..."
 
-    local max_attempts=60
+    local max_attempts=10
     local attempt=0
     local ready=false
 
-    echo -n "Checking health"
+    # Track which services have been reported as healthy
+    local api_reported=false
+    local ingestor_reported=false
+    local redis_reported=false
+    local frontend_reported=false
+    local gateway_reported=false
+
+    echo ""
 
     while [ $attempt -lt $max_attempts ]; do
         local api_healthy=false
         local ingestor_healthy=false
         local redis_healthy=false
+        local frontend_healthy=false
+        local gateway_healthy=false
 
         # Check if containers are running
         if docker ps | grep -q "logzai-api.*Up"; then
             # Try to ping API health endpoint
-            if curl -sf http://localhost:8000/health >/dev/null 2>&1 || \
+            if curl -sf http://localhost:8000/healthz >/dev/null 2>&1 || \
                curl -sf http://localhost:8000 >/dev/null 2>&1; then
                 api_healthy=true
+                if [ "$api_reported" = false ]; then
+                    print_success "API is healthy"
+                    api_reported=true
+                fi
             fi
         fi
 
@@ -368,6 +381,10 @@ wait_for_services() {
             if curl -sf http://localhost:10000/healthz >/dev/null 2>&1 || \
                curl -sf http://localhost:10000 >/dev/null 2>&1; then
                 ingestor_healthy=true
+                if [ "$ingestor_reported" = false ]; then
+                    print_success "Ingestor is healthy"
+                    ingestor_reported=true
+                fi
             fi
         fi
 
@@ -375,20 +392,46 @@ wait_for_services() {
             # Try redis ping
             if docker exec logzai-redis redis-cli ping >/dev/null 2>&1; then
                 redis_healthy=true
+                if [ "$redis_reported" = false ]; then
+                    print_success "Redis is healthy"
+                    redis_reported=true
+                fi
             fi
         fi
 
-        if [ "$api_healthy" = true ] && [ "$ingestor_healthy" = true ] && [ "$redis_healthy" = true ]; then
+        if docker ps | grep -q "logzai-frontend.*Up"; then
+            # Try frontend health endpoint on port 4000
+            if curl -sf http://localhost:4000/healthz >/dev/null 2>&1; then
+                frontend_healthy=true
+                if [ "$frontend_reported" = false ]; then
+                    print_success "Frontend is healthy"
+                    frontend_reported=true
+                fi
+            fi
+        fi
+
+        if docker ps | grep -q "logzai-gateway.*Up"; then
+            # Try gateway health endpoint on port 80
+            if curl -sf http://localhost:80/healthz >/dev/null 2>&1 || \
+               curl -sf http://localhost/healthz >/dev/null 2>&1; then
+                gateway_healthy=true
+                if [ "$gateway_reported" = false ]; then
+                    print_success "Gateway is healthy"
+                    gateway_reported=true
+                fi
+            fi
+        fi
+
+        if [ "$api_healthy" = true ] && [ "$ingestor_healthy" = true ] && [ "$redis_healthy" = true ] && [ "$frontend_healthy" = true ] && [ "$gateway_healthy" = true ]; then
             ready=true
             break
         fi
 
         attempt=$((attempt + 1))
-        echo -n "."
         sleep 2
     done
 
-    echo "" # New line after dots
+    echo ""
 
     if [ "$ready" = true ]; then
         print_success "All services are healthy and ready"
