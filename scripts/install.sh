@@ -102,7 +102,7 @@ check_prerequisites() {
     if ! command_exists docker; then
         print_warning "Docker is not installed"
         echo ""
-        read -p "Would you like to install Docker automatically? (y/N): " -n 1 -r
+        read -p "Would you like to install Docker automatically? (y/N): " -n 1 -r </dev/tty
         echo ""
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             print_info "Installing Docker..."
@@ -146,7 +146,7 @@ check_prerequisites() {
     if [ ${#ports_in_use[@]} -ne 0 ]; then
         print_warning "The following ports are already in use: ${ports_in_use[*]}"
         echo ""
-        read -p "Continue anyway? Services may fail to start. (y/N): " -n 1 -r
+        read -p "Continue anyway? Services may fail to start. (y/N): " -n 1 -r </dev/tty
         echo ""
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             exit 1
@@ -167,32 +167,32 @@ prompt_configuration() {
     echo ""
 
     # PostgreSQL Database URL
-    read -p "PostgreSQL Database URL [postgresql://logzai:logzai@localhost:5432/logzai]: " PG_DATABASE_URL
+    read -p "PostgreSQL Database URL [postgresql://logzai:logzai@localhost:5432/logzai]: " PG_DATABASE_URL </dev/tty
     PG_DATABASE_URL=${PG_DATABASE_URL:-"postgresql://logzai:logzai@localhost:5432/logzai"}
 
     # Storage Configuration
     echo ""
-    read -p "Use S3 for storage? (y/N): " USE_S3_INPUT
+    read -p "Use S3 for storage? (y/N): " USE_S3_INPUT </dev/tty
     USE_S3="False"
 
     if [[ "$USE_S3_INPUT" =~ ^[Yy]$ ]]; then
         USE_S3="True"
-        read -p "S3 Endpoint [https://s3.amazonaws.com]: " S3_ENDPOINT
+        read -p "S3 Endpoint [https://s3.amazonaws.com]: " S3_ENDPOINT </dev/tty
         S3_ENDPOINT=${S3_ENDPOINT:-"https://s3.amazonaws.com"}
 
-        read -p "S3 Bucket Name: " S3_BUCKET
-        read -p "S3 Region [us-east-1]: " S3_REGION
+        read -p "S3 Bucket Name: " S3_BUCKET </dev/tty
+        read -p "S3 Region [us-east-1]: " S3_REGION </dev/tty
         S3_REGION=${S3_REGION:-"us-east-1"}
 
-        read -p "S3 Access Key: " S3_ACCESS_KEY
-        read -sp "S3 Secret Key: " S3_SECRET_KEY
+        read -p "S3 Access Key: " S3_ACCESS_KEY </dev/tty
+        read -sp "S3 Secret Key: " S3_SECRET_KEY </dev/tty
         echo ""
 
         S3_PATH="s3://${S3_BUCKET}/orgs"
         LOCAL_PATH=""
     else
         # Local storage
-        read -p "Local storage path [./data/orgs]: " LOCAL_PATH
+        read -p "Local storage path [./data/orgs]: " LOCAL_PATH </dev/tty
         LOCAL_PATH=${LOCAL_PATH:-"./data/orgs"}
 
         S3_ENDPOINT=""
@@ -454,7 +454,7 @@ main() {
     print_info "This script will install and configure LogzAI on your system."
     print_warning "This will create a .env file in the current directory."
     echo ""
-    read -p "Do you want to continue? (y/N): " -n 1 -r
+    read -p "Do you want to continue? (y/N): " -n 1 -r </dev/tty
     echo ""
 
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
