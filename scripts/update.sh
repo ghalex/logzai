@@ -83,59 +83,12 @@ show_usage() {
     echo "  $0 frontend"
     echo "  $0 all"
     echo ""
-    echo "Or run without arguments for interactive mode:"
-    echo "  $0"
+    echo "Or use with curl:"
+    echo "  curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash -s frontend"
+    echo "  curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash -s all"
     echo ""
 }
 
-# Check if running in interactive terminal
-is_interactive() {
-    [ -t 0 ] && [ -t 1 ]
-}
-
-# Prompt for service selection (interactive mode)
-prompt_service_selection() {
-    echo "Available services to update:"
-    echo ""
-    echo "  1) frontend  - LogzAI Frontend"
-    echo "  2) api       - LogzAI API"
-    echo "  3) ingestor  - LogzAI Ingestor"
-    echo "  4) all       - Update all services"
-    echo ""
-
-    if is_interactive; then
-        read -p "Select a service to update (1-4): " choice
-    else
-        # Not interactive - try to read from /dev/tty if available
-        if [ -c /dev/tty ]; then
-            read -p "Select a service to update (1-4): " choice </dev/tty
-        else
-            print_error "Not running in interactive mode"
-            print_info "Please specify a service name as an argument"
-            echo ""
-            show_usage
-            exit 1
-        fi
-    fi
-
-    case $choice in
-        1)
-            echo "frontend"
-            ;;
-        2)
-            echo "api"
-            ;;
-        3)
-            echo "ingestor"
-            ;;
-        4)
-            echo "all"
-            ;;
-        *)
-            echo ""
-            ;;
-    esac
-}
 
 # Check prerequisites
 check_prerequisites() {
@@ -278,24 +231,17 @@ update_all_services() {
 main() {
     print_header
 
-    local service=""
-
-    # Check if service name is provided as argument
+    # Check if service name is provided
     if [ $# -eq 0 ]; then
-        # No argument provided - use interactive mode
-        check_prerequisites
+        print_error "No service name provided"
         echo ""
-        service=$(prompt_service_selection)
-
-        if [ -z "$service" ]; then
-            print_error "Invalid selection"
-            exit 1
-        fi
-    else
-        # Argument provided - use it directly
-        service=$1
-        check_prerequisites
+        show_usage
+        exit 1
     fi
+
+    local service=$1
+
+    check_prerequisites
 
     echo ""
 

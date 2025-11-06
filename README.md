@@ -69,10 +69,6 @@ curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh
 Or run locally:
 
 ```bash
-# Interactive mode (select from menu)
-bash scripts/update.sh
-
-# Or specify service directly
 bash scripts/update.sh frontend
 bash scripts/update.sh api
 bash scripts/update.sh ingestor
