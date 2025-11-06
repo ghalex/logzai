@@ -7,14 +7,14 @@ A powerful log analytics platform built with FastAPI, OpenTelemetry, and AI-powe
 Get LogzAI up and running in minutes with our one-line installer:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/ghalex/logzai-api/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/install.sh | bash
 ```
 
 Or clone and run locally:
 
 ```bash
-git clone https://github.com/ghalex/logzai-api.git
-cd logzai-api
+git clone https://github.com/ghalex/logzai.git
+cd logzai
 ./install.sh
 ```
 

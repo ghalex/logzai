@@ -3,7 +3,7 @@
 set -e
 
 # Configuration
-GITHUB_RAW_URL="https://raw.githubusercontent.com/ghalex/logzai-api/main"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/ghalex/logzai/main"
 
 # Colors for output
 RED='\033[0;31m'
