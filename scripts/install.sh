@@ -300,6 +300,30 @@ download_config_files() {
     fi
 }
 
+# Download scripts directory
+download_scripts() {
+    print_info "Downloading scripts directory..."
+
+    # Create scripts directory if it doesn't exist
+    mkdir -p scripts
+
+    # List of scripts to download
+    local scripts=("add-https.sh" "restart.sh" "update.sh")
+
+    for script in "${scripts[@]}"; do
+        if [ -f "scripts/$script" ]; then
+            print_info "scripts/$script already exists, skipping download"
+        else
+            if curl -fsSL "${GITHUB_RAW_URL}/scripts/$script" -o "scripts/$script"; then
+                chmod +x "scripts/$script"
+                print_success "scripts/$script downloaded"
+            else
+                print_warning "Failed to download scripts/$script"
+            fi
+        fi
+    done
+}
+
 # Pull images from Docker Hub
 pull_images() {
     echo ""
@@ -509,6 +533,7 @@ main() {
     create_env_file
     create_directories
     download_config_files
+    download_scripts
     pull_images
     start_services
     wait_for_services
