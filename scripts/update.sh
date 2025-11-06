@@ -88,6 +88,11 @@ show_usage() {
     echo ""
 }
 
+# Check if running in interactive terminal
+is_interactive() {
+    [ -t 0 ] && [ -t 1 ]
+}
+
 # Prompt for service selection (interactive mode)
 prompt_service_selection() {
     echo "Available services to update:"
@@ -97,7 +102,21 @@ prompt_service_selection() {
     echo "  3) ingestor  - LogzAI Ingestor"
     echo "  4) all       - Update all services"
     echo ""
-    read -p "Select a service to update (1-4): " choice </dev/tty
+
+    if is_interactive; then
+        read -p "Select a service to update (1-4): " choice
+    else
+        # Not interactive - try to read from /dev/tty if available
+        if [ -c /dev/tty ]; then
+            read -p "Select a service to update (1-4): " choice </dev/tty
+        else
+            print_error "Not running in interactive mode"
+            print_info "Please specify a service name as an argument"
+            echo ""
+            show_usage
+            exit 1
+        fi
+    fi
 
     case $choice in
         1)
@@ -160,13 +179,28 @@ update_service() {
     # Get compose command
     local COMPOSE_CMD=$(get_compose_cmd)
 
-    # Pull latest image
+    # Get current image ID before pulling
+    local old_image_id=$(docker images -q "$image" 2>/dev/null)
+
+    # Pull latest image (always pull to bypass cache)
     print_info "Pulling latest image: $image"
-    if docker pull "$image"; then
+    if docker pull "$image" 2>&1 | grep -q "Image is up to date\|Downloaded newer image"; then
         print_success "Image pulled successfully"
     else
         print_error "Failed to pull image"
         exit 1
+    fi
+
+    # Get new image ID after pulling
+    local new_image_id=$(docker images -q "$image" 2>/dev/null)
+
+    echo ""
+
+    # Check if image actually changed
+    if [ "$old_image_id" = "$new_image_id" ] && [ -n "$old_image_id" ]; then
+        print_info "Image is already up to date (no new version available)"
+    else
+        print_success "New image version detected"
     fi
 
     echo ""
@@ -187,9 +221,17 @@ update_service() {
 
     echo ""
 
-    # Start the service with new image
+    # Remove old image if it was replaced
+    if [ "$old_image_id" != "$new_image_id" ] && [ -n "$old_image_id" ] && [ -n "$new_image_id" ]; then
+        print_info "Removing old image..."
+        docker rmi "$old_image_id" 2>/dev/null || print_warning "Could not remove old image (may be in use)"
+    fi
+
+    echo ""
+
+    # Start the service with new image (force recreate to ensure new image is used)
     print_info "Starting service with updated image..."
-    if $COMPOSE_CMD up -d "$compose_service"; then
+    if $COMPOSE_CMD up -d --force-recreate "$compose_service"; then
         print_success "Service started successfully"
     else
         print_error "Failed to start service"

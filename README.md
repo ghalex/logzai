@@ -57,18 +57,25 @@ Once installation completes, you can:
 Update services with a one-line command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash
+# Update specific service
+curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash -s frontend
+curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash -s api
+curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash -s ingestor
+
+# Update all services
+curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash -s all
 ```
 
-Or run locally with specific service:
+Or run locally:
 
 ```bash
-# Update specific service
+# Interactive mode (select from menu)
+bash scripts/update.sh
+
+# Or specify service directly
 bash scripts/update.sh frontend
 bash scripts/update.sh api
 bash scripts/update.sh ingestor
-
-# Update all services
 bash scripts/update.sh all
 ```
 
