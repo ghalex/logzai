@@ -52,6 +52,32 @@ Once installation completes, you can:
 2. **Send logs**: Use OTLP to send logs to http://localhost:4318
 3. **Monitor tasks**: View Celery tasks at http://localhost:5555
 
+### Updating Services
+
+Update services with a one-line command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ghalex/logzai/main/scripts/update.sh | bash
+```
+
+Or run locally with specific service:
+
+```bash
+# Update specific service
+bash scripts/update.sh frontend
+bash scripts/update.sh api
+bash scripts/update.sh ingestor
+
+# Update all services
+bash scripts/update.sh all
+```
+
+The update script will:
+- ✓ Pull the latest Docker image from Docker Hub
+- ✓ Stop and remove the old container
+- ✓ Start a new container with the updated image
+- ✓ Verify the service is running
+
 ### Manual Installation
 
 If you prefer manual setup:
