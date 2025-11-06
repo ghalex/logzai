@@ -44,6 +44,8 @@ services:
     restart: unless-stopped
     depends_on:
       - logzai-api
+    ports:
+      - "4000:4000"
     healthcheck:
       test:
         [
@@ -52,7 +54,7 @@ services:
           "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://logzai-frontend:3000/healtz",
+          "http://logzai-frontend:4000/healtz",
         ]
       interval: 120s
       timeout: 10s
