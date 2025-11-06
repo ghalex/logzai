@@ -7,7 +7,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/gateway.conf:/etc/nginx/nginx.conf:ro
+      - ./gateway.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - logzai-frontend
@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://logzai-gateway/healthz"]
-      interval: 30s
+      interval: 120s
       timeout: 10s
       retries: 3
       start_period: 40s
@@ -28,17 +28,16 @@ services:
       - "4317:4317" # gRPC OTLP
       - "4318:4318" # HTTP OTLP
       - "13133:13133" # health endpoint
-    environment:
-      INGESTOR_ENDPOINT: ${INGESTOR_ENDPOINT}
-      COLLECTOR_API_KEY: ${COLLECTOR_API_KEY}
+    env_file:
+      - .env
     volumes:
-      - ./collector/collector-config.yaml:/etc/otelcol-contrib/collector-config.yaml:ro
+      - ./collector-config.yaml:/etc/otelcol-contrib/collector-config.yaml:ro
     command: ["--config=/etc/otelcol-contrib/collector-config.yaml"]
     restart: unless-stopped
 
   # Frontend React application
   logzai-frontend:
-    image: ghalex/logzai-frontend:v1.0.12
+    image: ghalex/logzai-frontend
     container_name: logzai-frontend
     environment:
       NODE_ENV: production
@@ -55,46 +54,45 @@ services:
           "--spider",
           "http://logzai-frontend:3000/healtz",
         ]
-      interval: 30s
+      interval: 120s
       timeout: 10s
       retries: 3
       start_period: 40s
 
   # Backend API - Internal only on port 8000
   logzai-api:
-    image: ghalex/logzai-api:v1.0.8
+    image: ghalex/logzai-api:latest
     container_name: logzai-api
     env_file:
       - .env
-    environment:
-      NODE_ENV: production
-
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://logzai-api:8000/api/v1/healthz"]
-      interval: 30s
+      interval: 120s
       timeout: 10s
       retries: 3
       start_period: 40s
 
   # Ingestor service for processing incoming logs
   logzai-ingestor:
-    image: ghalex/logzai-ingestor:v1.0.5
+    image: ghalex/logzai-ingestor:latest
     container_name: logzai-ingestor
+    ports:
+      - "10000:10000"
     env_file:
       - .env
-    depends_on:
-      - logzai-collector
+    volumes:
+      - ingestor-data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://logzai-ingestor:10000/healthz"]
-      interval: 30s
+      test: ["CMD", "curl", "-f", "http://localhost:10000/healthz"]
+      interval: 120s
       timeout: 10s
       retries: 3
       start_period: 40s
 
   # Redis for caching and rate limiting
   redis:
-    image: redis:7-alpine
+    image: redis:8.2.3-alpine
     container_name: logzai-redis
     ports:
       - "6379:6379"
@@ -113,5 +111,7 @@ networks:
     name: logzai-network
 
 volumes:
+  ingestor-data:
+    driver: local
   redis-data:
     driver: local

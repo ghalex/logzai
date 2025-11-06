@@ -29,8 +29,8 @@ extensions:
 
 exporters:
   otlphttp:
-    logs_endpoint: ${INGESTOR_ENDPOINT}/api/v1/process/otel/logs
-    traces_endpoint: ${INGESTOR_ENDPOINT}/api/v1/process/otel/traces
+    logs_endpoint: http://logzai-ingestor:10000/process/otel/logs
+    traces_endpoint: http://logzai-ingestor:10000/process/otel/traces
     compression: none
     headers:
       x-api-key: ${COLLECTOR_API_KEY}
