@@ -48,9 +48,9 @@ generate_secret() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
 }
 
-# Generate Fernet encryption key
+# Generate Fernet encryption key (32 bytes base64-encoded)
 generate_fernet_key() {
-    python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    openssl rand -base64 32
 }
 
 # Get server IP address
@@ -100,18 +100,6 @@ check_prerequisites() {
 
     if ! command_exists openssl; then
         print_error "openssl is required but not installed"
-        exit 1
-    fi
-
-    # Check for Python3 and cryptography library
-    if ! command_exists python3; then
-        print_error "python3 is required but not installed"
-        exit 1
-    fi
-
-    if ! python3 -c "import cryptography" 2>/dev/null; then
-        print_error "Python cryptography library is required but not installed"
-        print_info "Install it with: pip3 install cryptography"
         exit 1
     fi
 
