@@ -134,7 +134,7 @@ check_prerequisites() {
     fi
 
     # Check port availability
-    local ports=(80 443 8000 10000 4317 4318 6379)
+    local ports=(80 443 8000 10000 4317 4318 6379 5432)
     local ports_in_use=()
 
     for port in "${ports[@]}"; do
@@ -166,9 +166,26 @@ prompt_configuration() {
     echo "Press Enter to use the default value shown in [brackets]."
     echo ""
 
-    # PostgreSQL Database URL
-    read -p "PostgreSQL Database URL [postgresql://logzai:logzai@localhost:5432/logzai]: " PG_DATABASE_URL </dev/tty
-    PG_DATABASE_URL=${PG_DATABASE_URL:-"postgresql://logzai:logzai@localhost:5432/logzai"}
+    # PostgreSQL Database Configuration
+    echo ""
+    read -p "Do you have an external PostgreSQL database? (y/N): " HAS_EXTERNAL_DB </dev/tty
+    USE_EXTERNAL_DB="False"
+
+    if [[ "$HAS_EXTERNAL_DB" =~ ^[Yy]$ ]]; then
+        USE_EXTERNAL_DB="True"
+        read -p "PostgreSQL Database URL: " PG_DATABASE_URL </dev/tty
+        while [ -z "$PG_DATABASE_URL" ]; do
+            print_warning "Database URL is required"
+            read -p "PostgreSQL Database URL: " PG_DATABASE_URL </dev/tty
+        done
+        PG_PASSWORD=""
+    else
+        # Use containerized PostgreSQL
+        print_info "Using containerized PostgreSQL database"
+        PG_PASSWORD=$(generate_secret)
+        PG_DATABASE_URL="postgresql://logzai:${PG_PASSWORD}@logzai-db:5432/logzai"
+        print_success "Database credentials generated"
+    fi
 
     # Storage Configuration
     echo ""
@@ -324,6 +341,61 @@ download_scripts() {
     done
 }
 
+# Add PostgreSQL service to docker-compose.yml
+add_postgres_to_compose() {
+    print_info "Adding PostgreSQL service to docker-compose.yml..."
+
+    # Create a temporary file with the postgres service
+    cat > /tmp/postgres-service.yml << EOF
+
+  # PostgreSQL Database
+  logzai-db:
+    image: postgres:16-alpine
+    container_name: logzai-db
+    environment:
+      POSTGRES_DB: logzai
+      POSTGRES_USER: logzai
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logzai"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+EOF
+
+    # Use awk to insert the postgres service before the networks section
+    awk '/^networks:/ {
+        system("cat /tmp/postgres-service.yml")
+    }
+    { print }' docker-compose.yml > docker-compose.yml.tmp && mv docker-compose.yml.tmp docker-compose.yml
+
+    # Add postgres-data volume
+    sed -i '/^volumes:/a\  postgres-data:\n    driver: local' docker-compose.yml
+
+    # Add depends_on for postgres to logzai-api service
+    awk '/logzai-api:/ {
+        print
+        getline
+        print
+        getline
+        print
+        print "    depends_on:"
+        print "      - logzai-db"
+        next
+    }
+    { print }' docker-compose.yml > docker-compose.yml.tmp && mv docker-compose.yml.tmp docker-compose.yml
+
+    # Clean up
+    rm -f /tmp/postgres-service.yml
+
+    print_success "PostgreSQL service added to docker-compose.yml"
+}
+
 # Pull images from Docker Hub
 pull_images() {
     echo ""
@@ -342,6 +414,11 @@ pull_images() {
     # docker pull mher/flower:2.0 2>&1 | grep -v "Pulling" || true
     docker pull otel/opentelemetry-collector-contrib:latest 2>&1 | grep -v "Pulling" || true
     docker pull nginx:alpine 2>&1 | grep -v "Pulling" || true
+
+    # Pull PostgreSQL if using containerized database
+    if [ "$USE_EXTERNAL_DB" = "False" ]; then
+        docker pull postgres:16-alpine 2>&1 | grep -v "Pulling" || true
+    fi
 
     print_success "All images ready"
 }
@@ -377,6 +454,7 @@ wait_for_services() {
     local redis_reported=false
     local frontend_reported=false
     local gateway_reported=false
+    local postgres_reported=false
 
     echo ""
 
@@ -386,6 +464,7 @@ wait_for_services() {
         local redis_healthy=false
         local frontend_healthy=false
         local gateway_healthy=false
+        local postgres_healthy=true  # Default to true if not using containerized DB
 
         # Check if containers are running
         if docker ps | grep -q "logzai-api.*Up"; then
@@ -446,7 +525,25 @@ wait_for_services() {
             fi
         fi
 
-        if [ "$api_healthy" = true ] && [ "$ingestor_healthy" = true ] && [ "$redis_healthy" = true ] && [ "$frontend_healthy" = true ] && [ "$gateway_healthy" = true ]; then
+        # Check PostgreSQL if using containerized database
+        if [ "$USE_EXTERNAL_DB" = "False" ]; then
+            if docker ps | grep -q "logzai-db.*Up"; then
+                # Try postgres health check
+                if docker exec logzai-db pg_isready -U logzai >/dev/null 2>&1; then
+                    postgres_healthy=true
+                    if [ "$postgres_reported" = false ]; then
+                        print_success "PostgreSQL is healthy"
+                        postgres_reported=true
+                    fi
+                else
+                    postgres_healthy=false
+                fi
+            else
+                postgres_healthy=false
+            fi
+        fi
+
+        if [ "$api_healthy" = true ] && [ "$ingestor_healthy" = true ] && [ "$redis_healthy" = true ] && [ "$frontend_healthy" = true ] && [ "$gateway_healthy" = true ] && [ "$postgres_healthy" = true ]; then
             ready=true
             break
         fi
@@ -483,6 +580,9 @@ print_success_message() {
     echo "  • API Server:        http://localhost:8000"
     echo "  • Ingestor:          http://localhost:10000"
     echo "  • OTLP Collector:    http://localhost:4318 (HTTP) / 4317 (gRPC)"
+    if [ "$USE_EXTERNAL_DB" = "False" ]; then
+        echo "  • PostgreSQL:        localhost:5432 (logzai/logzai/logzai)"
+    fi
 
     if [ -n "$server_ip" ]; then
         echo ""
@@ -491,6 +591,9 @@ print_success_message() {
         echo "  • API Server:        http://${server_ip}:8000"
         echo "  • Ingestor:          http://${server_ip}:10000"
         echo "  • OTLP Collector:    http://${server_ip}:4318 (HTTP) / ${server_ip}:4317 (gRPC)"
+        if [ "$USE_EXTERNAL_DB" = "False" ]; then
+            echo "  • PostgreSQL:        ${server_ip}:5432"
+        fi
     fi
     echo ""
     print_info "Common Commands:"
@@ -533,6 +636,12 @@ main() {
     create_env_file
     create_directories
     download_config_files
+
+    # Add PostgreSQL to docker-compose if using containerized database
+    if [ "$USE_EXTERNAL_DB" = "False" ]; then
+        add_postgres_to_compose
+    fi
+
     download_scripts
     pull_images
     start_services
