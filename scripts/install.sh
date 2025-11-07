@@ -48,6 +48,11 @@ generate_secret() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
 }
 
+# Generate Fernet encryption key
+generate_fernet_key() {
+    python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+}
+
 # Get server IP address
 get_ip() {
     local ip=""
@@ -95,6 +100,18 @@ check_prerequisites() {
 
     if ! command_exists openssl; then
         print_error "openssl is required but not installed"
+        exit 1
+    fi
+
+    # Check for Python3 and cryptography library
+    if ! command_exists python3; then
+        print_error "python3 is required but not installed"
+        exit 1
+    fi
+
+    if ! python3 -c "import cryptography" 2>/dev/null; then
+        print_error "Python cryptography library is required but not installed"
+        print_info "Install it with: pip3 install cryptography"
         exit 1
     fi
 
@@ -222,6 +239,7 @@ prompt_configuration() {
 
     # Generate secure secrets
     JWT_SECRET_KEY=$(generate_secret)
+    ENCRYPTION_KEY=$(generate_fernet_key)
     COLLECTOR_API_KEY=$(generate_secret)
 
     print_success "Configuration collected"
@@ -239,6 +257,7 @@ OPENAI_API_TYPE="openai"
 
 # General Configuration
 JWT_SECRET_KEY=${JWT_SECRET_KEY}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
 PG_DATABASE_URL="${PG_DATABASE_URL}"
 LOCAL_PATH="${LOCAL_PATH}"
 COLLECTOR_API_KEY=${COLLECTOR_API_KEY}
