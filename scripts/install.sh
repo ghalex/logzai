@@ -48,6 +48,11 @@ generate_secret() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
 }
 
+# Generate Fernet encryption key (32 bytes base64-encoded)
+generate_fernet_key() {
+    openssl rand -base64 32
+}
+
 # Get server IP address
 get_ip() {
     local ip=""
@@ -222,6 +227,7 @@ prompt_configuration() {
 
     # Generate secure secrets
     JWT_SECRET_KEY=$(generate_secret)
+    ENCRYPTION_KEY=$(generate_fernet_key)
     COLLECTOR_API_KEY=$(generate_secret)
 
     print_success "Configuration collected"
@@ -239,6 +245,7 @@ OPENAI_API_TYPE="openai"
 
 # General Configuration
 JWT_SECRET_KEY=${JWT_SECRET_KEY}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
 PG_DATABASE_URL="${PG_DATABASE_URL}"
 LOCAL_PATH="${LOCAL_PATH}"
 COLLECTOR_API_KEY=${COLLECTOR_API_KEY}
