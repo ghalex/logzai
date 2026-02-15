@@ -13,27 +13,6 @@ services:
       - logzai-frontend
       - logzai-api
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://logzai-gateway/healthz"]
-      interval: 120s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # Collector for receiving OTLP data
-  logzai-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: logzai-collector
-    ports:
-      - "4317:4317" # gRPC OTLP
-      - "4318:4318" # HTTP OTLP
-      - "13133:13133" # health endpoint
-    env_file:
-      - .env
-    volumes:
-      - ./collector-config.yaml:/etc/otelcol-contrib/collector-config.yaml:ro
-    command: ["--config=/etc/otelcol-contrib/collector-config.yaml"]
-    restart: unless-stopped
 
   # Frontend React application
   logzai-frontend:
@@ -61,13 +40,18 @@ services:
       retries: 3
       start_period: 40s
 
-  # Backend API - Internal only on port 8000
+  # Backend API
   logzai-api:
     image: ghalex/logzai-api:latest
     container_name: logzai-api
     env_file:
       - .env
+    volumes:
+      - ${DATA_DIR:-./data}/logs:/app/data
     restart: unless-stopped
+    depends_on:
+      - logzai-redis
+      - logzai-db
     healthcheck:
       test: ["CMD", "curl", "-f", "http://logzai-api:8000/healthz"]
       interval: 120s
@@ -84,7 +68,11 @@ services:
     env_file:
       - .env
     volumes:
-      - ingestor-data:/app/data
+      - ${DATA_DIR:-./data}/logs:/app/data
+    depends_on:
+      - logzai-redis
+      - logzai-db
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:10000/healthz"]
       interval: 120s
@@ -92,18 +80,61 @@ services:
       retries: 3
       start_period: 40s
 
-  # Redis for caching and rate limiting
-  redis:
+  # Celery worker for background tasks
+  logzai-worker:
+    image: ghalex/logzai-worker:latest
+    container_name: logzai-worker
+    env_file:
+      - .env
+    volumes:
+      - ${DATA_DIR:-./data}/logs:/app/data
+    depends_on:
+      - logzai-redis
+      - logzai-db
+    restart: unless-stopped
+
+  # Celery beat scheduler
+  logzai-beat:
+    image: ghalex/logzai-beat:latest
+    container_name: logzai-beat
+    env_file:
+      - .env
+    volumes:
+      - ${DATA_DIR:-./data}/logs:/app/data
+    depends_on:
+      - logzai-redis
+      - logzai-db
+    restart: unless-stopped
+
+  # Redis for caching and task queue
+  logzai-redis:
     image: redis:8.2.3-alpine
     container_name: logzai-redis
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes
     volumes:
-      - redis-data:/data
+      - ${DATA_DIR:-./data}/redis:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  logzai-db:
+    image: postgres:16-alpine
+    container_name: logzai-db
+    env_file:
+      - .env
+    volumes:
+      - ${DATA_DIR:-./data}/db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logzai"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -112,8 +143,3 @@ networks:
   default:
     name: logzai-network
 
-volumes:
-  ingestor-data:
-    driver: local
-  redis-data:
-    driver: local

@@ -139,7 +139,7 @@ check_prerequisites() {
     fi
 
     # Check port availability
-    local ports=(80 443 8000 10000 4317 4318 6379 5432)
+    local ports=(80 443 8000 10000 6379 5432)
     local ports_in_use=()
 
     for port in "${ports[@]}"; do
@@ -171,26 +171,10 @@ prompt_configuration() {
     echo "Press Enter to use the default value shown in [brackets]."
     echo ""
 
-    # PostgreSQL Database Configuration
+    # Data Directory
     echo ""
-    read -p "Do you have an external PostgreSQL database? (y/N): " HAS_EXTERNAL_DB </dev/tty
-    USE_EXTERNAL_DB="False"
-
-    if [[ "$HAS_EXTERNAL_DB" =~ ^[Yy]$ ]]; then
-        USE_EXTERNAL_DB="True"
-        read -p "PostgreSQL Database URL: " PG_DATABASE_URL </dev/tty
-        while [ -z "$PG_DATABASE_URL" ]; do
-            print_warning "Database URL is required"
-            read -p "PostgreSQL Database URL: " PG_DATABASE_URL </dev/tty
-        done
-        PG_PASSWORD=""
-    else
-        # Use containerized PostgreSQL
-        print_info "Using containerized PostgreSQL database"
-        PG_PASSWORD=$(generate_secret)
-        PG_DATABASE_URL="postgresql://logzai:${PG_PASSWORD}@logzai-db:5432/logzai"
-        print_success "Database credentials generated"
-    fi
+    read -p "Data directory [./data]: " DATA_DIR </dev/tty
+    DATA_DIR=${DATA_DIR:-"./data"}
 
     # Storage Configuration
     echo ""
@@ -210,12 +194,10 @@ prompt_configuration() {
         read -sp "S3 Secret Key: " S3_SECRET_KEY </dev/tty
         echo ""
 
-        S3_PATH="s3://${S3_BUCKET}/orgs"
-        LOCAL_PATH=""
+        S3_PATH="s3://${S3_BUCKET}"
+        LOCAL_PATH="./data"
     else
-        # Local storage
-        read -p "Local storage path [./data/orgs]: " LOCAL_PATH </dev/tty
-        LOCAL_PATH=${LOCAL_PATH:-"./data/orgs"}
+        LOCAL_PATH="./data"
 
         S3_ENDPOINT=""
         S3_BUCKET=""
@@ -228,7 +210,8 @@ prompt_configuration() {
     # Generate secure secrets
     JWT_SECRET_KEY=$(generate_secret)
     ENCRYPTION_KEY=$(generate_fernet_key)
-    COLLECTOR_API_KEY=$(generate_secret)
+    PG_PASSWORD=$(generate_secret)
+    PG_DATABASE_URL="postgresql://logzai:${PG_PASSWORD}@logzai-db:5432/logzai"
 
     print_success "Configuration collected"
 }
@@ -238,18 +221,32 @@ create_env_file() {
     print_info "Creating .env file..."
 
     cat > .env << EOF
-# AI Configuration (configure in app settings)
-AZURE_OPENAI_ENDPOINT=""
-OPENAI_API_KEY=""
-OPENAI_API_TYPE="openai"
-
 # General Configuration
 JWT_SECRET_KEY=${JWT_SECRET_KEY}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 PG_DATABASE_URL="${PG_DATABASE_URL}"
+
+# PostgreSQL Container
+POSTGRES_DB=logzai
+POSTGRES_USER=logzai
+POSTGRES_PASSWORD=${PG_PASSWORD}
+
+# Redis
+REDIS_URL=redis://logzai-redis:6379/0
+
+# Celery
+CELERY_BROKER_URL=redis://logzai-redis:6379/0
+CELERY_RESULT_BACKEND=redis://logzai-redis:6379/1
+CELERY_LOG_LEVEL=info
+CELERY_CONCURRENCY=2
+CELERY_QUEUES=default,logs,ai
+CELERY_WORKER_NAME=logzai-worker
+
+# Data Directory
+DATA_DIR=${DATA_DIR}
+
+# Storage
 LOCAL_PATH="${LOCAL_PATH}"
-COLLECTOR_API_KEY=${COLLECTOR_API_KEY}
-DEMO_ORGANIZATION_ID=1
 USE_S3=${USE_S3}
 
 # S3 Configuration
@@ -266,11 +263,11 @@ EOF
 
 # Create necessary directories
 create_directories() {
-    if [ "$USE_S3" = "False" ] && [ -n "$LOCAL_PATH" ]; then
-        print_info "Creating local storage directory..."
-        mkdir -p "$LOCAL_PATH"
-        print_success "Local storage directory created: $LOCAL_PATH"
-    fi
+    print_info "Creating data directories..."
+    mkdir -p "${DATA_DIR}/logs"
+    mkdir -p "${DATA_DIR}/db"
+    mkdir -p "${DATA_DIR}/redis"
+    print_success "Data directories created: ${DATA_DIR}/{logs,db,redis}"
 }
 
 # Download required configuration files
@@ -285,19 +282,6 @@ download_config_files() {
             print_success "docker-compose.yml downloaded"
         else
             print_error "Failed to download docker-compose.yml"
-            print_info "Please ensure you have internet access or run the installer from the cloned repository"
-            exit 1
-        fi
-    fi
-
-    # Download collector-config.yaml
-    if [ -f "collector-config.yaml" ]; then
-        print_info "collector-config.yaml already exists, skipping download"
-    else
-        if curl -fsSL "${GITHUB_RAW_URL}/collector-config.yaml" -o collector-config.yaml; then
-            print_success "collector-config.yaml downloaded"
-        else
-            print_error "Failed to download collector-config.yaml"
             print_info "Please ensure you have internet access or run the installer from the cloned repository"
             exit 1
         fi
@@ -348,61 +332,6 @@ download_scripts() {
     done
 }
 
-# Add PostgreSQL service to docker-compose.yml
-add_postgres_to_compose() {
-    print_info "Adding PostgreSQL service to docker-compose.yml..."
-
-    # Create a temporary file with the postgres service
-    cat > /tmp/postgres-service.yml << EOF
-
-  # PostgreSQL Database
-  logzai-db:
-    image: postgres:16-alpine
-    container_name: logzai-db
-    environment:
-      POSTGRES_DB: logzai
-      POSTGRES_USER: logzai
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U logzai"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-EOF
-
-    # Use awk to insert the postgres service before the networks section
-    awk '/^networks:/ {
-        system("cat /tmp/postgres-service.yml")
-    }
-    { print }' docker-compose.yml > docker-compose.yml.tmp && mv docker-compose.yml.tmp docker-compose.yml
-
-    # Add postgres-data volume
-    sed -i '/^volumes:/a\  postgres-data:\n    driver: local' docker-compose.yml
-
-    # Add depends_on for postgres to logzai-api service
-    awk '/logzai-api:/ {
-        print
-        getline
-        print
-        getline
-        print
-        print "    depends_on:"
-        print "      - logzai-db"
-        next
-    }
-    { print }' docker-compose.yml > docker-compose.yml.tmp && mv docker-compose.yml.tmp docker-compose.yml
-
-    # Clean up
-    rm -f /tmp/postgres-service.yml
-
-    print_success "PostgreSQL service added to docker-compose.yml"
-}
-
 # Pull images from Docker Hub
 pull_images() {
     echo ""
@@ -413,19 +342,13 @@ pull_images() {
     docker pull ghalex/logzai-frontend:latest 2>&1 | grep -v "Pulling" || true
     docker pull ghalex/logzai-api:latest 2>&1 | grep -v "Pulling" || true
     docker pull ghalex/logzai-ingestor:latest 2>&1 | grep -v "Pulling" || true
-    # docker pull ghalex/logzai-mcp:latest 2>&1 | grep -v "Pulling" || true
-    # docker pull ghalex/logzai-worker:latest 2>&1 | grep -v "Pulling" || true
+    docker pull ghalex/logzai-worker:latest 2>&1 | grep -v "Pulling" || true
+    docker pull ghalex/logzai-beat:latest 2>&1 | grep -v "Pulling" || true
 
     print_info "Pulling third-party images..."
     docker pull redis:8.2.3-alpine 2>&1 | grep -v "Pulling" || true
-    # docker pull mher/flower:2.0 2>&1 | grep -v "Pulling" || true
-    docker pull otel/opentelemetry-collector-contrib:latest 2>&1 | grep -v "Pulling" || true
+    docker pull postgres:16-alpine 2>&1 | grep -v "Pulling" || true
     docker pull nginx:alpine 2>&1 | grep -v "Pulling" || true
-
-    # Pull PostgreSQL if using containerized database
-    if [ "$USE_EXTERNAL_DB" = "False" ]; then
-        docker pull postgres:16-alpine 2>&1 | grep -v "Pulling" || true
-    fi
 
     print_success "All images ready"
 }
@@ -471,11 +394,10 @@ wait_for_services() {
         local redis_healthy=false
         local frontend_healthy=false
         local gateway_healthy=false
-        local postgres_healthy=true  # Default to true if not using containerized DB
+        local postgres_healthy=false
 
         # Check if containers are running
         if docker ps | grep -q "logzai-api.*Up"; then
-            # Try to ping API health endpoint
             if curl -sf http://localhost:8000/healthz >/dev/null 2>&1 || \
                curl -sf http://localhost:8000 >/dev/null 2>&1; then
                 api_healthy=true
@@ -487,7 +409,6 @@ wait_for_services() {
         fi
 
         if docker ps | grep -q "logzai-ingestor.*Up"; then
-            # Try ingestor health endpoint
             if curl -sf http://localhost:10000/healthz >/dev/null 2>&1 || \
                curl -sf http://localhost:10000 >/dev/null 2>&1; then
                 ingestor_healthy=true
@@ -499,7 +420,6 @@ wait_for_services() {
         fi
 
         if docker ps | grep -q "logzai-redis.*Up"; then
-            # Try redis ping
             if docker exec logzai-redis redis-cli ping >/dev/null 2>&1; then
                 redis_healthy=true
                 if [ "$redis_reported" = false ]; then
@@ -510,7 +430,6 @@ wait_for_services() {
         fi
 
         if docker ps | grep -q "logzai-frontend.*Up"; then
-            # Try frontend health endpoint on port 4000
             if curl -sf http://localhost:4000/healthz >/dev/null 2>&1; then
                 frontend_healthy=true
                 if [ "$frontend_reported" = false ]; then
@@ -521,7 +440,6 @@ wait_for_services() {
         fi
 
         if docker ps | grep -q "logzai-gateway.*Up"; then
-            # Try gateway health endpoint on port 80
             if curl -sf http://localhost:80/healthz >/dev/null 2>&1 || \
                curl -sf http://localhost/healthz >/dev/null 2>&1; then
                 gateway_healthy=true
@@ -532,21 +450,13 @@ wait_for_services() {
             fi
         fi
 
-        # Check PostgreSQL if using containerized database
-        if [ "$USE_EXTERNAL_DB" = "False" ]; then
-            if docker ps | grep -q "logzai-db.*Up"; then
-                # Try postgres health check
-                if docker exec logzai-db pg_isready -U logzai >/dev/null 2>&1; then
-                    postgres_healthy=true
-                    if [ "$postgres_reported" = false ]; then
-                        print_success "PostgreSQL is healthy"
-                        postgres_reported=true
-                    fi
-                else
-                    postgres_healthy=false
+        if docker ps | grep -q "logzai-db.*Up"; then
+            if docker exec logzai-db pg_isready -U logzai >/dev/null 2>&1; then
+                postgres_healthy=true
+                if [ "$postgres_reported" = false ]; then
+                    print_success "PostgreSQL is healthy"
+                    postgres_reported=true
                 fi
-            else
-                postgres_healthy=false
             fi
         fi
 
@@ -578,7 +488,7 @@ print_success_message() {
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║                                                        ║${NC}"
-    echo -e "${GREEN}║  🎉 LogzAI has been successfully installed!           ║${NC}"
+    echo -e "${GREEN}║  LogzAI has been successfully installed!               ║${NC}"
     echo -e "${GREEN}║                                                        ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -586,10 +496,7 @@ print_success_message() {
     echo "  • Frontend:          http://localhost"
     echo "  • API Server:        http://localhost:8000"
     echo "  • Ingestor:          http://localhost:10000"
-    echo "  • OTLP Collector:    http://localhost:4318 (HTTP) / 4317 (gRPC)"
-    if [ "$USE_EXTERNAL_DB" = "False" ]; then
-        echo "  • PostgreSQL:        localhost:5432 (logzai/logzai/logzai)"
-    fi
+    echo "  • PostgreSQL:        localhost:5432"
 
     if [ -n "$server_ip" ]; then
         echo ""
@@ -597,10 +504,7 @@ print_success_message() {
         echo "  • Frontend:          http://${server_ip}"
         echo "  • API Server:        http://${server_ip}:8000"
         echo "  • Ingestor:          http://${server_ip}:10000"
-        echo "  • OTLP Collector:    http://${server_ip}:4318 (HTTP) / ${server_ip}:4317 (gRPC)"
-        if [ "$USE_EXTERNAL_DB" = "False" ]; then
-            echo "  • PostgreSQL:        ${server_ip}:5432"
-        fi
+        echo "  • PostgreSQL:        ${server_ip}:5432"
     fi
     echo ""
     print_info "Common Commands:"
@@ -643,12 +547,6 @@ main() {
     create_env_file
     create_directories
     download_config_files
-
-    # Add PostgreSQL to docker-compose if using containerized database
-    if [ "$USE_EXTERNAL_DB" = "False" ]; then
-        add_postgres_to_compose
-    fi
-
     download_scripts
     pull_images
     start_services

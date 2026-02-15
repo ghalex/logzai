@@ -63,6 +63,12 @@ get_service_info() {
         ingestor)
             echo "ghalex/logzai-ingestor:latest|logzai-ingestor|logzai-ingestor"
             ;;
+        worker)
+            echo "ghalex/logzai-worker:latest|logzai-worker|logzai-worker"
+            ;;
+        beat)
+            echo "ghalex/logzai-beat:latest|logzai-beat|logzai-beat"
+            ;;
         *)
             echo ""
             ;;
@@ -77,6 +83,8 @@ show_usage() {
     echo "  frontend   - Update LogzAI Frontend"
     echo "  api        - Update LogzAI API"
     echo "  ingestor   - Update LogzAI Ingestor"
+    echo "  worker     - Update LogzAI Worker"
+    echo "  beat       - Update LogzAI Beat"
     echo "  all        - Update all services"
     echo ""
     echo "Examples:"
@@ -214,7 +222,7 @@ update_service() {
 
 # Update all services
 update_all_services() {
-    local services=("frontend" "api" "ingestor")
+    local services=("frontend" "api" "ingestor" "worker" "beat")
 
     for service in "${services[@]}"; do
         echo ""
