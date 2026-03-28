@@ -140,33 +140,7 @@ update_service() {
     # Get compose command
     local COMPOSE_CMD=$(get_compose_cmd)
 
-    # Get current image ID before pulling
-    local old_image_id=$(docker images -q "$image" 2>/dev/null)
-
-    # Pull latest image (always pull to bypass cache)
-    print_info "Pulling latest image: $image"
-    if docker pull "$image" 2>&1 | grep -q "Image is up to date\|Downloaded newer image"; then
-        print_success "Image pulled successfully"
-    else
-        print_error "Failed to pull image"
-        exit 1
-    fi
-
-    # Get new image ID after pulling
-    local new_image_id=$(docker images -q "$image" 2>/dev/null)
-
-    echo ""
-
-    # Check if image actually changed
-    if [ "$old_image_id" = "$new_image_id" ] && [ -n "$old_image_id" ]; then
-        print_info "Image is already up to date (no new version available)"
-    else
-        print_success "New image version detected"
-    fi
-
-    echo ""
-
-    # Stop and remove the container
+    # Stop and remove the container first so we can safely remove the image
     print_info "Stopping and removing old container..."
     if $COMPOSE_CMD stop "$compose_service" 2>/dev/null; then
         print_success "Container stopped"
@@ -182,15 +156,24 @@ update_service() {
 
     echo ""
 
-    # Remove old image if it was replaced
-    if [ "$old_image_id" != "$new_image_id" ] && [ -n "$old_image_id" ] && [ -n "$new_image_id" ]; then
-        print_info "Removing old image..."
-        docker rmi "$old_image_id" 2>/dev/null || print_warning "Could not remove old image (may be in use)"
+    # Remove local image to force a fresh pull (bypasses digest cache)
+    print_info "Removing local image to force fresh download..."
+    docker rmi "$image" 2>/dev/null && print_success "Local image removed" || print_warning "No local image to remove"
+
+    echo ""
+
+    # Pull fresh image from Docker Hub
+    print_info "Pulling latest image: $image"
+    if docker pull "$image"; then
+        print_success "Image pulled successfully"
+    else
+        print_error "Failed to pull image"
+        exit 1
     fi
 
     echo ""
 
-    # Start the service with new image (force recreate to ensure new image is used)
+    # Start the service with new image
     print_info "Starting service with updated image..."
     if $COMPOSE_CMD up -d --force-recreate "$compose_service"; then
         print_success "Service started successfully"

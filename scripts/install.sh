@@ -316,7 +316,7 @@ download_scripts() {
     mkdir -p scripts
 
     # List of scripts to download
-    local scripts=("add-https.sh" "restart.sh" "update.sh")
+    local scripts=("add-https.sh" "restart.sh" "update.sh" "status.sh")
 
     for script in "${scripts[@]}"; do
         if [ -f "scripts/$script" ]; then
@@ -494,17 +494,15 @@ print_success_message() {
     echo ""
     print_info "Service URLs (Local):"
     echo "  • Frontend:          http://localhost"
-    echo "  • API Server:        http://localhost:8000"
-    echo "  • Ingestor:          http://localhost:10000"
-    echo "  • PostgreSQL:        localhost:5432"
+    echo "  • API:               http://localhost/api"
+    echo "  • Ingestor:          http://localhost/ingest"
 
     if [ -n "$server_ip" ]; then
         echo ""
         print_info "Service URLs (Remote Access):"
         echo "  • Frontend:          http://${server_ip}"
-        echo "  • API Server:        http://${server_ip}:8000"
-        echo "  • Ingestor:          http://${server_ip}:10000"
-        echo "  • PostgreSQL:        ${server_ip}:5432"
+        echo "  • API:               http://${server_ip}/api"
+        echo "  • Ingestor:          http://${server_ip}/ingest"
     fi
     echo ""
     print_info "Common Commands:"
@@ -513,6 +511,7 @@ print_success_message() {
     echo "  • Stop services:     docker compose -f docker-compose.yml down"
     echo "  • Restart services:  docker compose -f docker-compose.yml restart"
     echo "  • View status:       docker compose -f docker-compose.yml ps"
+    echo "  • LogzAI status:     bash scripts/status.sh"
     echo ""
     print_info "HTTPS Setup:"
     echo "  • If you have a domain, enable HTTPS with:"
